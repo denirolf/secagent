@@ -89,6 +89,26 @@ async def run_container(plan: ExecutionPlan, limits: SandboxLimits) -> ToolRunRe
         return ToolRunResult(plan.tool_id, False, None, "", "docker not available", False)
 
 
+def _inspect_cookies(set_cookie_values: list[str]) -> list[dict]:
+    """Passively summarize each Set-Cookie's security flags. No values are stored."""
+    out: list[dict] = []
+    for raw in set_cookie_values:
+        low = raw.lower()
+        name = raw.split("=", 1)[0].strip()
+        samesite = ""
+        for part in low.split(";"):
+            part = part.strip()
+            if part.startswith("samesite="):
+                samesite = part.split("=", 1)[1]
+        out.append({
+            "name": name[:80],
+            "httponly": "httponly" in low,
+            "secure": "secure" in low,
+            "samesite": samesite,
+        })
+    return out
+
+
 async def run_http_probe(plan: ExecutionPlan, target: str) -> ToolRunResult:
     assert plan.kind == "inprocess" and isinstance(plan.inproc_params, HttpProbeParams)
     params = plan.inproc_params
@@ -111,6 +131,9 @@ async def run_http_probe(plan: ExecutionPlan, target: str) -> ToolRunResult:
         m = re.search(r"<title>(.*?)</title>", resp.text[:20000], re.I | re.S)
         if m:
             title = m.group(1).strip()[:200]
+    # Passive inspection of Set-Cookie flags (session-security posture).
+    cookies = _inspect_cookies(resp.headers.get_list("set-cookie")
+                               if hasattr(resp.headers, "get_list") else [])
     structured = {
         "url": url,
         "status_code": resp.status_code,
@@ -120,6 +143,7 @@ async def run_http_probe(plan: ExecutionPlan, target: str) -> ToolRunResult:
         "present_security_headers": [h for h in SECURITY_HEADERS if h in headers],
         "missing_security_headers": missing,
         "content_type": headers.get("content-type", ""),
+        "cookies": cookies,
     }
     return ToolRunResult(
         tool_id="http_probe",

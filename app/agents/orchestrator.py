@@ -13,12 +13,15 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 
 from app.agents.base import AgentRuntime
+from app.agents.auth_security import analyze_auth_posture
 from app.agents.exploit_research import build_plans
 from app.agents.exploit_validation import ExploitValidationAgent, LabOnlyViolation
+from app.agents.reasoning import ReasoningResult, run_reasoning
 from app.agents.recon import ReconResult, run_recon
 from app.agents.vuln_analysis import run_vuln_analysis
 from app.contracts.messages import Finding, ToolRequest
 from app.contracts.validation import ValidationOutcome
+from app.knowledge.base import KnowledgeBase
 from app.engine.audit import AuditEntry, InMemoryAuditSink
 from app.engine.executor import ProjectContext, SecureExecutor
 from app.engine.registry import ToolRegistry
@@ -50,6 +53,7 @@ class OrchestratorResult:
     tool_calls_used: int
     cost_usd: float
     validations: list[ValidationOutcome] = field(default_factory=list)
+    reasoning: ReasoningResult | None = None
 
 
 ApprovalResolver = Callable[[ToolRequest, ProjectContext], Awaitable[bool]]
@@ -94,6 +98,8 @@ class MasterOrchestrator:
         run_nuclei: bool = False,
         validate: bool = False,
         lab_container: str | None = None,
+        auth_check: bool = False,
+        reasoning: bool = False,
         on_event: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> OrchestratorResult:
         async def emit(decision: Decision) -> None:
@@ -132,6 +138,15 @@ class MasterOrchestrator:
             runtime, recon, use_llm=use_llm, model=model, max_turns=max_turns, run_nuclei=run_nuclei
         )
 
+        # --- Phase: Authentication security (passive session/auth posture) ---
+        if auth_check:
+            guard.step()
+            runtime.agent_id = "auth_security"
+            await emit(Decision("auth_security", "analyze_auth_posture",
+                "Analyze session cookie flags and auth posture (passive; synthetic/lab-only "
+                "for any active test, which this phase does not perform)."))
+            findings = findings + analyze_auth_posture(recon)
+
         validations: list[ValidationOutcome] = []
         if validate and findings:
             stop = guard.exceeded()
@@ -157,19 +172,32 @@ class MasterOrchestrator:
             await emit(Decision("validation_summary", "elevate",
                 f"{confirmed}/{len(validations)} finding(s) reproduced in lab -> lab_confirmed."))
 
+        # --- Phase: Security reasoning (correlate, risk graph, prioritize) ---
+        reasoning_result: ReasoningResult | None = None
+        if reasoning and findings:
+            guard.step()
+            runtime.agent_id = "reasoning"
+            await emit(Decision("reasoning", "correlate",
+                "Correlate findings, enrich via knowledge base, build risk graph, prioritize."))
+            reasoning_result = run_reasoning(findings, validations, KnowledgeBase())
+            top = reasoning_result.prioritized[0]["vulnerability_id"] if reasoning_result.prioritized else "n/a"
+            await emit(Decision("reasoning_summary", "prioritize",
+                f"{len(reasoning_result.risk_graph.edges)} risk chain(s) identified; "
+                f"top-priority finding: {top}."))
+
         stop = guard.exceeded()
         state = "stopped_limit" if stop else "completed"
         await emit(Decision("finalize", "report",
             f"{len(findings)} suspected finding(s); "
             f"{sum(1 for v in validations if v.reproduced)} elevated to lab_confirmed."))
         return self._result(state, stop or "objective complete", recon, findings,
-                            runtime, guard, validations)
+                            runtime, guard, validations, reasoning_result)
 
     def _result(self, state, reason, recon, findings, runtime, guard,
-                validations=None) -> OrchestratorResult:
+                validations=None, reasoning_result=None) -> OrchestratorResult:
         return OrchestratorResult(
             state=state, stop_reason=reason, recon=recon, findings=findings,
             decisions=self.decisions, audit=list(self.audit_sink.entries),
             tool_calls_used=runtime.tool_calls_used, cost_usd=guard.cost_usd,
-            validations=validations or [],
+            validations=validations or [], reasoning=reasoning_result,
         )

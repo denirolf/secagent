@@ -19,6 +19,7 @@ async def execute_run(
     *, project_id: UUID, run_id: UUID, objective: str, target: str,
     use_llm: bool, run_nuclei: bool = False,
     validate_in_lab: bool = False, lab_container: str | None = None,
+    auth_check: bool = False, reasoning: bool = False,
 ) -> dict:
     settings = get_settings()
     async with SessionLocal() as session:
@@ -45,7 +46,7 @@ async def execute_run(
     result = await orch.run(
         objective=objective, target=target, use_llm=use_llm, model=model,
         run_nuclei=run_nuclei, validate=validate_in_lab, lab_container=lab_container,
-        on_event=on_event,
+        auth_check=auth_check, reasoning=reasoning, on_event=on_event,
     )
     report = build_report(
         project_name=proj.name, objective=objective, target=target, result=result

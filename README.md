@@ -48,6 +48,25 @@ Trigger Phase 2 on a run with `"validate_in_lab": true` (optionally
 `"lab_container": "juiceshop"` to reset between tests). Results populate
 `validation_results` and the report's `validations` section and `lab_confirmed` count.
 
+## Phase 3 — Authentication Security, Reasoning & Knowledge Base
+
+- **Authentication Security Agent (Agent 6)** — passive session/auth posture analysis
+  (session cookie `HttpOnly` / `Secure` / `SameSite` flags → CWE-1004/614/1275 suspected
+  findings). **No** password spraying, credential stuffing, or attempts against unknown
+  accounts; any active credential test is lab-only, synthetic-accounts-only, and
+  approval-gated (not performed in this phase — this agent only analyzes observed posture).
+- **Security Reasoning Agent (Agent 7)** — correlates all findings, enriches them via the
+  Knowledge Base (CWE → OWASP Top 10 + remediation), builds a **risk graph** of how
+  weaknesses chain (e.g. missing script-restriction headers + a script-readable cookie →
+  XSS-to-session-theft), prioritizes findings (severity + confidence + lab-confirmed +
+  chain membership), and proposes further safe, lab-only investigations.
+- **Knowledge Base** — `GET /knowledge`, `GET /knowledge/search?q=`, `POST /knowledge/seed`
+  (mirrors the bundled CWE/OWASP dataset into `knowledge_entries`). Reference data only; it
+  never changes permissions.
+
+Trigger on a run with `"auth_check": true` and `"reasoning": true`. The report gains a
+`reasoning` block (risk graph, prioritized list, OWASP summary, proposed investigations).
+
 ## Requirements
 - Docker (the execution engine launches sandboxed tool containers)
 - Python 3.12+
@@ -95,7 +114,7 @@ A reproducible version of this flow is in `scripts/e2e.sh`.
 
 ```bash
 pip install -r requirements.txt
-pytest -q          # 22 unit/integration tests (scope engine, executor, orchestrator->report)
+pytest -q          # 28 unit/integration tests (scope engine, executor, orchestrator->report)
 ```
 
 The Scope Engine tests (`tests/test_scope_engine.py`) are the most important: they cover
