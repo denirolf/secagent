@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: secagent
+      POSTGRES_PASSWORD: secagent
+      POSTGRES_DB: secagent
+    ports: ["5432:5432"]
+    networks: [secagent_lab]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U secagent"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    networks: [secagent_lab]
+
+  migrate:
+    build: .
+    command: alembic upgrade head
+    environment:
+      DATABASE_URL_SYNC: postgresql+psycopg2://secagent:secagent@postgres:5432/secagent
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [secagent_lab]
+
+  api:
+    build: .
+    # The execution engine launches sandboxed sibling tool containers, so it needs the
+    # Docker socket. This is the EXECUTION ENGINE, not an agent container; the sandboxed
+    # tool containers it starts never receive the socket (see app/engine/sandbox.py).
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      DATABASE_URL: postgresql+asyncpg://secagent:secagent@postgres:5432/secagent
+      REDIS_URL: redis://redis:6379/0
+      SANDBOX_NETWORK: secagent_lab
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports: ["8000:8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks: [secagent_lab]
+
+networks:
+  secagent_lab:
+    name: secagent_lab

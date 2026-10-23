@@ -1,0 +1,12 @@
+# Authorized lab target. Joins the same isolated network as the platform so the
+# execution engine's tool containers can reach it by the name "juiceshop".
+services:
+  juiceshop:
+    image: bkimminich/juice-shop
+    container_name: juiceshop
+    networks: [secagent_lab]
+    # No published host port is required: the platform reaches it inside the lab network.
+networks:
+  secagent_lab:
+    external: true
+    name: secagent_lab
