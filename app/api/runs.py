@@ -50,6 +50,20 @@ async def start_run(project_id: UUID, body: RunIn, session: AsyncSession = Depen
     return RunOut(run_id=run.id, project_id=project_id, state="running")
 
 
+@router.get("/projects/{project_id}/runs")
+async def list_runs(project_id: UUID, session: AsyncSession = Depends(get_session)):
+    rows = (await session.execute(
+        select(models.Run).where(models.Run.project_id == project_id)
+        .order_by(models.Run.started_at.desc())
+    )).scalars().all()
+    return [
+        {"run_id": r.id, "objective": r.objective, "state": r.state,
+         "tool_calls_used": r.tool_calls_used, "cost_usd": r.cost_usd,
+         "started_at": r.started_at.isoformat() if r.started_at else None}
+        for r in rows
+    ]
+
+
 @router.get("/runs/{run_id}")
 async def get_run(run_id: UUID, session: AsyncSession = Depends(get_session)):
     run = await session.get(models.Run, run_id)
