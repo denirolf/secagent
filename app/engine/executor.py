@@ -65,6 +65,14 @@ class SecureExecutor:
         self._audit = audit_sink
         self._approve = approval_resolver or _deny_all
 
+    @property
+    def scope(self):
+        return self._scope
+
+    @property
+    def registry(self) -> ToolRegistry:
+        return self._registry
+
     async def execute(
         self, req: ToolRequest, *, agent_id: str, ctx: ProjectContext
     ) -> ExecResult:

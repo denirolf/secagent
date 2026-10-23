@@ -18,6 +18,7 @@ from app.reporting.report import build_report
 async def execute_run(
     *, project_id: UUID, run_id: UUID, objective: str, target: str,
     use_llm: bool, run_nuclei: bool = False,
+    validate_in_lab: bool = False, lab_container: str | None = None,
 ) -> dict:
     settings = get_settings()
     async with SessionLocal() as session:
@@ -43,7 +44,8 @@ async def execute_run(
     model = settings.claude_model or None
     result = await orch.run(
         objective=objective, target=target, use_llm=use_llm, model=model,
-        run_nuclei=run_nuclei, on_event=on_event,
+        run_nuclei=run_nuclei, validate=validate_in_lab, lab_container=lab_container,
+        on_event=on_event,
     )
     report = build_report(
         project_name=proj.name, objective=objective, target=target, result=result

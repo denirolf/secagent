@@ -87,12 +87,17 @@ async def persist_result(
         session.add(asset_row)
         await session.flush()
 
+    # Validation outcomes (Phase 2) keyed by finding id; these drive status elevation.
+    outcomes = {v.finding_vuln_id: v for v in result.validations}
+
     for f in result.findings:
+        outcome = outcomes.get(f.vulnerability_id)
+        status = outcome.new_status.value if outcome else f.status.value
         vuln = models.Vulnerability(
             project_id=project_id, run_id=run.id,
             asset_id=asset_row.id if asset_row else None, asset=f.asset,
             vulnerability_id=f.vulnerability_id, cve=f.cve, cwe=f.cwe,
-            severity=f.severity.value, status=f.status.value, confidence=f.confidence.value,
+            severity=f.severity.value, status=status, confidence=f.confidence.value,
             recommended_validation=f.recommended_validation, remediation=f.remediation,
         )
         session.add(vuln)
@@ -101,6 +106,15 @@ async def persist_result(
             session.add(models.Evidence(
                 vulnerability_id=vuln.id, kind=ev.kind, summary=ev.summary, data_ref=ev.data_ref
             ))
+        if outcome is not None:
+            session.add(models.ValidationResult(
+                vulnerability_id=vuln.id, environment=outcome.environment,
+                reproduced=outcome.reproduced, notes=outcome.notes,
+            ))
+            for ev in outcome.evidence:
+                session.add(models.Evidence(
+                    vulnerability_id=vuln.id, kind=ev.kind, summary=ev.summary
+                ))
 
     session.add(models.Report(project_id=project_id, run_id=run.id, format="json", data=report))
 
