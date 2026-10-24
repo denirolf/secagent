@@ -4,13 +4,15 @@ from __future__ import annotations
 import asyncio
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import RunIn, RunOut
 from app.db import models, repo
 from app.db.base import get_session
+from app.reporting.report import render_html, render_markdown, render_pdf
 from app.security.deps import require_operator
 from app.services.runner import execute_run
 
@@ -79,11 +81,27 @@ async def get_run(run_id: UUID, session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/runs/{run_id}/report")
-async def get_report(run_id: UUID, session: AsyncSession = Depends(get_session)):
+async def get_report(
+    run_id: UUID,
+    format: str = Query("json", pattern="^(json|md|markdown|html|pdf)$"),
+    session: AsyncSession = Depends(get_session),
+):
     row = (await session.execute(
         select(models.Report).where(models.Report.run_id == run_id)
         .order_by(models.Report.generated_at.desc())
     )).scalars().first()
     if row is None:
         raise HTTPException(404, "no report yet (run may still be in progress)")
-    return row.data
+    data = row.data
+    if format == "json":
+        return data
+    if format in ("md", "markdown"):
+        return PlainTextResponse(render_markdown(data), media_type="text/markdown; charset=utf-8")
+    if format == "html":
+        return HTMLResponse(render_html(data))
+    # pdf
+    return Response(
+        content=render_pdf(data),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="report-{run_id}.pdf"'},
+    )

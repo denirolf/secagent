@@ -40,6 +40,8 @@ export const api = {
     j<{ run_id: string }>(`/projects/${pid}/runs`, { method: "POST", body: JSON.stringify(body) }),
   vulnerabilities: (pid: string) => j<Vulnerability[]>(`/projects/${pid}/vulnerabilities`),
   report: (rid: string) => j<any>(`/runs/${rid}/report`),
+  reportUrl: (rid: string, format: "md" | "html" | "pdf") =>
+    `${API_BASE}/runs/${rid}/report?format=${format}`,
   audit: (pid: string) => j<any[]>(`/projects/${pid}/audit`),
   knowledge: () => j<any[]>("/knowledge"),
   wsUrl: (rid: string) => `${API_BASE.replace(/^http/, "ws")}/ws/runs/${rid}`,
