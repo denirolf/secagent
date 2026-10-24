@@ -127,6 +127,24 @@ python scripts/create_api_key.py --role admin --name "ops"   # prints the token 
 # then call the API with:  Authorization: Bearer sk-...
 ```
 
+## Reporting Agent (A8) — report exports
+
+The **Reporting Agent (Agent 8)** adds a human-readable **executive narrative** to every
+report: a deterministic summary grounded entirely in the findings (it invents nothing — a
+scanner signal is never upgraded here). The report downloads in several formats from one
+endpoint:
+
+```bash
+curl -s  "localhost:8000/runs/$RID/report"             # JSON (canonical)
+curl -s  "localhost:8000/runs/$RID/report?format=md"   # Markdown
+curl -s  "localhost:8000/runs/$RID/report?format=html" # standalone HTML
+curl -so report.pdf "localhost:8000/runs/$RID/report?format=pdf"   # PDF
+```
+
+PDF rendering uses `fpdf2` (pure Python, no system libraries), so it behaves the same in CI
+and in a minimal container. The dashboard's Reports page shows the executive summary and
+links the Markdown / HTML / PDF exports.
+
 ## Requirements
 - Docker (the execution engine launches sandboxed tool containers)
 - Python 3.12+
@@ -174,7 +192,7 @@ A reproducible version of this flow is in `scripts/e2e.sh`.
 
 ```bash
 pip install -r requirements.txt
-pytest -q          # 40 unit/integration tests (scope engine, executor, orchestrator->report, security)
+pytest -q          # 45 unit/integration tests (scope engine, executor, orchestrator->report, security, reporting)
 ```
 
 The Scope Engine tests (`tests/test_scope_engine.py`) are the most important: they cover
@@ -203,6 +221,6 @@ DNS-rebinding (name in scope, IP out of scope → deny), cloud-metadata hard-den
   `--cap-drop ALL`; UDP/SYN scans are out of scope for Phase 1.
 - `nuclei_scan` is registered but defaults to requiring approval and downloads templates
   on first use; the default e2e runs recon + passive probing only.
-- Reports are JSON (canonical) + a minimal server HTML view; the Phase 4 dashboard adds a
-  richer in-browser report view. PDF export remains a later nicety.
+- Reports are JSON (canonical) with Markdown, HTML, and PDF exports via the Reporting Agent
+  (A8); the Phase 4 dashboard shows the executive summary and links the exports.
 - Findings are `suspected` only; nothing is auto-promoted to confirmed.

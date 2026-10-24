@@ -46,6 +46,26 @@ export default function Page() {
           </div>
           <p className="note" style={{ marginBottom: 18 }}>{s.note}</p>
 
+          {report.narrative && (
+            <div className="card" style={{ marginBottom: 18 }}>
+              <b>Executive summary</b>
+              <p style={{ marginTop: 6 }}>{report.narrative.headline}</p>
+              <p style={{ color: "var(--muted)", fontSize: 13 }}>{report.narrative.overview}</p>
+              {report.narrative.key_findings?.length > 0 && (
+                <ul style={{ fontSize: 13 }}>
+                  {report.narrative.key_findings.map((k: string, i: number) => <li key={i}>{k}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <div style={{ marginBottom: 18, fontSize: 14 }}>
+            Download:{" "}
+            <a href={api.reportUrl(runId, "md")} target="_blank" rel="noreferrer">Markdown</a>{" · "}
+            <a href={api.reportUrl(runId, "html")} target="_blank" rel="noreferrer">HTML</a>{" · "}
+            <a href={api.reportUrl(runId, "pdf")} target="_blank" rel="noreferrer">PDF</a>
+          </div>
+
           <div className="card" style={{ marginBottom: 18 }}>
             <b>Findings</b>
             <table style={{ marginTop: 10 }}>

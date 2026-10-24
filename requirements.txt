@@ -16,6 +16,7 @@ claude-agent-sdk==0.2.165
 anthropic==0.69.0
 # Reporting
 jinja2==3.1.4
+fpdf2==2.8.1
 # Observability
 prometheus-client==0.21.1
 # Tests
