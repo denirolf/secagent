@@ -27,7 +27,7 @@ from app.engine.executor import ProjectContext, SecureExecutor
 from app.engine.registry import ToolRegistry
 from app.engine.scope import AuthorizedScope, Resolver, ScopeEngine
 from app.engine.tools.builtin import ALL_PHASE1_TOOLS
-from app.orchestration.limits import LimitGuard, RunLimits
+from app.orchestration.limits import CostModel, LimitGuard, RunLimits
 
 
 def _now() -> str:
@@ -72,12 +72,14 @@ class MasterOrchestrator:
         ctx: ProjectContext,
         limits: RunLimits,
         *,
+        cost_model: CostModel | None = None,
         resolver: Resolver | None = None,
         approval_resolver: ApprovalResolver | None = None,
     ) -> None:
         self.scopes = scopes
         self.ctx = ctx
         self.limits = limits
+        self.cost_model = cost_model
         self.audit_sink = InMemoryAuditSink()
         self.registry = ToolRegistry(ALL_PHASE1_TOOLS)
         self.scope_engine = ScopeEngine(scopes, resolver=resolver)
@@ -109,7 +111,7 @@ class MasterOrchestrator:
                                 "action": decision.action, "rationale": decision.rationale,
                                 "at": decision.at})
 
-        guard = LimitGuard(self.limits)
+        guard = LimitGuard(self.limits, self.cost_model)
         runtime = AgentRuntime(
             agent_id="recon", executor=self.executor, registry=self.registry,
             ctx=self.ctx, max_tool_calls=self.limits.max_tool_calls,
@@ -125,6 +127,7 @@ class MasterOrchestrator:
         await emit(Decision("recon", "run_recon", "Inventory the attack surface."))
         recon = await run_recon(runtime, target, use_llm=use_llm, model=model, max_turns=max_turns)
 
+        guard.record_tool_calls(runtime.tool_calls_used)
         stop = guard.exceeded()
         if stop:
             return self._result("stopped_limit", stop, recon, [], runtime, guard)
@@ -149,6 +152,7 @@ class MasterOrchestrator:
 
         validations: list[ValidationOutcome] = []
         if validate and findings:
+            guard.record_tool_calls(runtime.tool_calls_used)
             stop = guard.exceeded()
             if stop:
                 return self._result("stopped_limit", stop, recon, findings, runtime, guard)
@@ -185,6 +189,7 @@ class MasterOrchestrator:
                 f"{len(reasoning_result.risk_graph.edges)} risk chain(s) identified; "
                 f"top-priority finding: {top}."))
 
+        guard.record_tool_calls(runtime.tool_calls_used)
         stop = guard.exceeded()
         state = "stopped_limit" if stop else "completed"
         await emit(Decision("finalize", "report",

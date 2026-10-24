@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.schemas import ProjectIn, ProjectOut, ScopeIn
 from app.db import models, repo
 from app.db.base import get_session
+from app.security.deps import require_admin
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -27,7 +28,7 @@ async def list_projects(session: AsyncSession = Depends(get_session)):
     return out
 
 
-@router.post("", response_model=ProjectOut)
+@router.post("", response_model=ProjectOut, dependencies=[Depends(require_admin)])
 async def create_project(body: ProjectIn, session: AsyncSession = Depends(get_session)):
     proj = await repo.create_project(
         session, name=body.name, autonomy_level=body.autonomy_level,

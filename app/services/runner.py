@@ -10,8 +10,9 @@ from app.db import repo
 from app.db.base import SessionLocal
 from app.engine.executor import ProjectContext
 from app.engine.sandbox import SandboxLimits
+from app.observability import metrics
 from app.orchestration.events import bus
-from app.orchestration.limits import RunLimits
+from app.orchestration.limits import CostModel, RunLimits
 from app.reporting.report import build_report
 
 
@@ -37,7 +38,11 @@ async def execute_run(
         ),
     )
     limits = RunLimits(proj.max_iterations, proj.max_tool_calls, proj.max_budget_usd)
-    orch = MasterOrchestrator(scopes, ctx, limits)
+    cost_model = CostModel(
+        per_iteration_usd=settings.est_cost_per_iteration_usd,
+        per_tool_call_usd=settings.est_cost_per_tool_call_usd,
+    )
+    orch = MasterOrchestrator(scopes, ctx, limits, cost_model=cost_model)
 
     async def on_event(ev: dict) -> None:
         await bus.publish(run_id, ev)
@@ -59,6 +64,10 @@ async def execute_run(
             session, project_id=project_id, run=run, result=result, report=report
         )
         await session.commit()
+
+    metrics.observe_run(result.state)
+    for finding in report.get("findings", []):
+        metrics.observe_findings(finding.get("status", "suspected"))
 
     await bus.publish(run_id, {"type": "done", "state": result.state,
                                "findings": report["summary"]["findings_total"]})

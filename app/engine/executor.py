@@ -27,6 +27,7 @@ from app.engine.registry import (
 )
 from app.engine.sandbox import SandboxLimits, ToolRunResult, run_container, run_http_probe
 from app.engine.scope import ScopeEngine
+from app.observability import metrics
 
 # Resolves whether a required approval has been granted. Returns True to proceed.
 ApprovalResolver = Callable[[ToolRequest, "ProjectContext"], Awaitable[bool]]
@@ -138,6 +139,7 @@ class SecureExecutor:
         summary: str,
         ctx: ProjectContext,
     ) -> None:
+        metrics.observe_tool_call(req.tool_id, outcome)
         await self._audit.record(
             AuditEntry(
                 agent_id=agent_id,

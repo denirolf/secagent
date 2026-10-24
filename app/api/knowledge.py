@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import get_session
 from app.knowledge.base import KnowledgeBase, seed_knowledge_base
+from app.security.deps import require_admin
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 _kb = KnowledgeBase()
@@ -26,7 +27,7 @@ async def search_knowledge(q: str):
     return [_as_dict(e) for e in _kb.search(q)]
 
 
-@router.post("/seed")
+@router.post("/seed", dependencies=[Depends(require_admin)])
 async def seed(session: AsyncSession = Depends(get_session)):
     n = await seed_knowledge_base(session)
     await session.commit()
