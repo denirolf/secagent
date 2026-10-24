@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.schemas import RunIn, RunOut
 from app.db import models, repo
 from app.db.base import get_session
+from app.security.deps import require_operator
 from app.services.runner import execute_run
 
 router = APIRouter(tags=["runs"])
@@ -19,7 +20,8 @@ router = APIRouter(tags=["runs"])
 _tasks: set[asyncio.Task] = set()
 
 
-@router.post("/projects/{project_id}/runs", response_model=RunOut)
+@router.post("/projects/{project_id}/runs", response_model=RunOut,
+             dependencies=[Depends(require_operator)])
 async def start_run(project_id: UUID, body: RunIn, session: AsyncSession = Depends(get_session)):
     proj = await repo.get_project(session, project_id)
     if proj is None:

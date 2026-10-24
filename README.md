@@ -98,6 +98,35 @@ npm install
 npm run dev                            # http://localhost:3000
 ```
 
+## Phase 5 — Production hardening
+
+Wraps the same scope-gated engine in a production layer. Nothing here can weaken the Scope
+Engine, sandbox, approval, or audit guarantees — those live in `app/engine/` and are
+unchanged. See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for the full operator guide.
+
+- **Authentication + RBAC** — API-key auth with roles `viewer` < `operator` < `admin`
+  (reads need viewer, starting runs needs operator, creating projects / seeding the
+  knowledge base / managing keys need admin). Only a salted hash is stored; a key is shown
+  once. **Off by default** so dev/tests/e2e are unchanged; enable with `AUTH_ENABLED=true`
+  and an `API_KEY_PEPPER`. Manage keys via `scripts/create_api_key.py` or `POST /admin/api-keys`.
+- **Rate limiting** — token bucket per API key / client IP, `429` + `Retry-After`.
+- **Observability** — `GET /health` (liveness), `GET /ready` (503 when the DB is down),
+  `GET /metrics` (Prometheus: HTTP, tool calls by decision, scope denials, runs, findings,
+  rate-limited), and structured JSON logs (`LOG_JSON=true`) with an `X-Request-ID` per request.
+- **Cost control** — per-project `max_iterations` / `max_tool_calls` / `max_budget_usd`
+  ceilings; optional per-unit cost estimates make the budget ceiling stop a run before a
+  real bill accrues (`0` = off, behaviour unchanged).
+- **Secrets** — env, `.env`, or secret files (Docker/K8s) under `SECRETS_DIR`; never logged.
+- **CI & ops** — `.github/workflows/ci.yml` (pytest + dashboard build), `scripts/backup.sh`
+  / `scripts/restore.sh` (pg_dump with retention), and the `api_keys` Alembic migration.
+
+```bash
+export AUTH_ENABLED=true API_KEY_PEPPER="$(openssl rand -hex 32)"
+alembic upgrade head
+python scripts/create_api_key.py --role admin --name "ops"   # prints the token once
+# then call the API with:  Authorization: Bearer sk-...
+```
+
 ## Requirements
 - Docker (the execution engine launches sandboxed tool containers)
 - Python 3.12+
@@ -145,7 +174,7 @@ A reproducible version of this flow is in `scripts/e2e.sh`.
 
 ```bash
 pip install -r requirements.txt
-pytest -q          # 28 unit/integration tests (scope engine, executor, orchestrator->report)
+pytest -q          # 40 unit/integration tests (scope engine, executor, orchestrator->report, security)
 ```
 
 The Scope Engine tests (`tests/test_scope_engine.py`) are the most important: they cover
@@ -165,7 +194,8 @@ DNS-rebinding (name in scope, IP out of scope → deny), cloud-metadata hard-den
 ## Limitations (Phase 1)
 - This section documents the Phase 1 baseline. The Phase 2–4 work above (exploit-validation
   lab, auth/reasoning/knowledge base, and the dashboard) is implemented on the stacked
-  branches; production hardening (RBAC, secrets, rate limiting, cost controls) is Phase 5.
+  branches; production hardening (RBAC, secrets, rate limiting, cost controls) is Phase 5
+  (implemented — see the Phase 5 section above and docs/DEPLOYMENT.md).
 - The execution engine runs in the API process and uses the host Docker socket. In
   production (Phase 5) it should be split into a separate privileged service so the API
   itself holds no Docker access.

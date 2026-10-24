@@ -226,3 +226,23 @@ class KnowledgeEntry(Base):
     key: Mapped[str] = mapped_column(String(120))
     body: Mapped[dict] = mapped_column(JSONB, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ApiKey(Base):
+    """Phase 5 — API-key credential for authN/Z.
+
+    Only the SHA-256 hash of ``pepper + secret`` is stored; the key itself is shown once at
+    creation. ``prefix`` is the non-secret public id used to look a key up. A key carries a
+    role (viewer | operator | admin) checked by the RBAC dependency.
+    """
+
+    __tablename__ = "api_keys"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    prefix: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    key_hash: Mapped[str] = mapped_column(String(128))
+    name: Mapped[str] = mapped_column(String(255), default="")
+    role: Mapped[str] = mapped_column(String(50), default="viewer")
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
