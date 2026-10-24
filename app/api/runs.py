@@ -32,6 +32,7 @@ async def start_run(project_id: UUID, body: RunIn, session: AsyncSession = Depen
             await execute_run(
                 project_id=project_id, run_id=run.id, objective=body.objective,
                 target=body.target, use_llm=body.use_llm, run_nuclei=body.run_nuclei,
+                validate_in_lab=body.validate_in_lab, lab_container=body.lab_container,
             )
         except Exception as exc:  # noqa: BLE001
             from app.db.base import SessionLocal

@@ -28,6 +28,26 @@ Findings are strictly `suspected` in Phase 1: a scanner/probe result is a signal
 confirmation. Elevation to `lab_confirmed` (Phase 2) and `confirmed_authorized` requires
 reproduction in the isolated lab plus human sign-off.
 
+## Phase 2 — Exploit Research & Lab Validation
+
+Adds two agents and the suspected → lab_confirmed path:
+
+- **Exploit Research Agent (Agent 4)** — analyzes each suspected finding and produces a
+  `ValidationPlan` (mechanism, preconditions, impact, lab reproduction steps, and a set of
+  **bounded, passive, lab-only checks**). It never executes anything against a target.
+- **Exploit Validation Agent (Agent 5)** — reproduces findings **inside the isolated lab
+  only** using those bounded checks, and elevates a finding from `suspected` to
+  `lab_confirmed` when it reproduces. It **hard-refuses any target that is not an
+  authorized lab environment** (`matched_is_lab`), only runs passive checks (no
+  exploitation primitive exists), optionally resets a dedicated lab container between
+  tests, and still routes every check through the SecureExecutor (scope + audit).
+  `confirmed_authorized` is never set automatically — it needs validation in the
+  authorized environment plus explicit human sign-off.
+
+Trigger Phase 2 on a run with `"validate_in_lab": true` (optionally
+`"lab_container": "juiceshop"` to reset between tests). Results populate
+`validation_results` and the report's `validations` section and `lab_confirmed` count.
+
 ## Requirements
 - Docker (the execution engine launches sandboxed tool containers)
 - Python 3.12+
@@ -57,9 +77,10 @@ PID=$(curl -s -X POST localhost:8000/projects -H 'content-type: application/json
 }' | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
 
 # 2) Start a run (use_llm:true drives the Claude agents; false runs deterministically)
+# use_llm:true drives the Claude agents; add "validate_in_lab":true for Phase 2 validation
 RID=$(curl -s -X POST localhost:8000/projects/$PID/runs -H 'content-type: application/json' -d "{
   \"objective\":\"Assess the authorized Juice Shop lab target\",
-  \"target\":\"http://$JS_IP:3000\",\"use_llm\":true
+  \"target\":\"http://$JS_IP:3000\",\"use_llm\":true,\"validate_in_lab\":true
 }" | python3 -c "import sys,json;print(json.load(sys.stdin)['run_id'])")
 
 # 3) Watch live (optional) and fetch the report
@@ -74,7 +95,7 @@ A reproducible version of this flow is in `scripts/e2e.sh`.
 
 ```bash
 pip install -r requirements.txt
-pytest -q          # 18 unit/integration tests (scope engine, executor, orchestrator->report)
+pytest -q          # 22 unit/integration tests (scope engine, executor, orchestrator->report)
 ```
 
 The Scope Engine tests (`tests/test_scope_engine.py`) are the most important: they cover

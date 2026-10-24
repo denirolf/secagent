@@ -17,7 +17,14 @@ def build_report(
     *, project_name: str, objective: str, target: str, result: OrchestratorResult
 ) -> dict[str, Any]:
     findings = result.findings
-    by_status = Counter(f.status.value for f in findings)
+    # A finding's effective status reflects any Phase 2 lab validation outcome.
+    outcomes = {v.finding_vuln_id: v for v in result.validations}
+
+    def effective_status(f) -> str:
+        o = outcomes.get(f.vulnerability_id)
+        return o.new_status.value if o else f.status.value
+
+    by_status = Counter(effective_status(f) for f in findings)
     by_severity = Counter(f.severity.value for f in findings)
 
     recon = result.recon
@@ -53,10 +60,12 @@ def build_report(
             "findings_total": len(findings),
             "findings_by_status": dict(by_status),
             "findings_by_severity": dict(by_severity),
+            "lab_confirmed": by_status.get("lab_confirmed", 0),
             "note": (
-                "All findings are 'suspected'. None has been reproduced in an isolated lab "
-                "(lab_confirmed) or validated in the authorized environment "
-                "(confirmed_authorized). A scanner/probe result is a signal, not a confirmation."
+                "Findings start 'suspected' (a scanner/probe signal, not a confirmation). "
+                "A finding becomes 'lab_confirmed' only when reproduced in the isolated lab. "
+                "'confirmed_authorized' additionally requires validation in the authorized "
+                "environment plus human sign-off and is never set automatically."
             ),
         },
         "assets": assets,
@@ -67,13 +76,25 @@ def build_report(
                 "cve": f.cve,
                 "cwe": f.cwe,
                 "severity": f.severity.value,
-                "status": f.status.value,
+                "status": effective_status(f),
                 "confidence": f.confidence.value,
                 "evidence": [{"kind": e.kind, "summary": e.summary} for e in f.evidence],
                 "recommended_validation": f.recommended_validation,
                 "remediation": f.remediation,
             }
             for f in findings
+        ],
+        "validations": [
+            {
+                "finding": v.finding_vuln_id,
+                "asset": v.asset,
+                "environment": v.environment,
+                "reproduced": v.reproduced,
+                "new_status": v.new_status.value,
+                "evidence": [{"kind": e.kind, "summary": e.summary} for e in v.evidence],
+                "notes": v.notes,
+            }
+            for v in result.validations
         ],
         "decisions": [
             {"step": d.step, "action": d.action, "rationale": d.rationale, "at": d.at}

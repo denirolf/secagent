@@ -34,6 +34,8 @@ class RunIn(BaseModel):
     target: str
     use_llm: bool = True
     run_nuclei: bool = False
+    validate_in_lab: bool = False  # Phase 2: reproduce findings in the isolated lab
+    lab_container: str | None = None  # optional lab container to reset between tests
 
 
 class RunOut(BaseModel):

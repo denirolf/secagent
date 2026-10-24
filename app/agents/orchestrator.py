@@ -13,9 +13,12 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 
 from app.agents.base import AgentRuntime
+from app.agents.exploit_research import build_plans
+from app.agents.exploit_validation import ExploitValidationAgent, LabOnlyViolation
 from app.agents.recon import ReconResult, run_recon
 from app.agents.vuln_analysis import run_vuln_analysis
 from app.contracts.messages import Finding, ToolRequest
+from app.contracts.validation import ValidationOutcome
 from app.engine.audit import AuditEntry, InMemoryAuditSink
 from app.engine.executor import ProjectContext, SecureExecutor
 from app.engine.registry import ToolRegistry
@@ -46,6 +49,7 @@ class OrchestratorResult:
     audit: list[AuditEntry]
     tool_calls_used: int
     cost_usd: float
+    validations: list[ValidationOutcome] = field(default_factory=list)
 
 
 ApprovalResolver = Callable[[ToolRequest, ProjectContext], Awaitable[bool]]
@@ -88,6 +92,8 @@ class MasterOrchestrator:
         model: str | None,
         max_turns: int = 6,
         run_nuclei: bool = False,
+        validate: bool = False,
+        lab_container: str | None = None,
         on_event: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> OrchestratorResult:
         async def emit(decision: Decision) -> None:
@@ -126,15 +132,44 @@ class MasterOrchestrator:
             runtime, recon, use_llm=use_llm, model=model, max_turns=max_turns, run_nuclei=run_nuclei
         )
 
+        validations: list[ValidationOutcome] = []
+        if validate and findings:
+            stop = guard.exceeded()
+            if stop:
+                return self._result("stopped_limit", stop, recon, findings, runtime, guard)
+            # --- Phase: Exploit research (plans only, no execution on targets) ---
+            guard.step()
+            await emit(Decision("exploit_research", "build_validation_plans",
+                "Analyze suspected findings; produce lab validation plans (no execution)."))
+            plans = build_plans(findings)
+
+            # --- Phase: Exploit validation (lab-only reproduction) ---
+            guard.step()
+            await emit(Decision("exploit_validation", "reproduce_in_lab",
+                "Reproduce findings via bounded passive checks inside the isolated lab."))
+            agent = ExploitValidationAgent(self.executor, self.ctx, lab_container=lab_container)
+            try:
+                validations = await agent.validate(target, plans, reset_each=bool(lab_container))
+            except LabOnlyViolation as exc:
+                await emit(Decision("exploit_validation", "refused", str(exc)))
+                validations = []
+            confirmed = sum(1 for v in validations if v.reproduced)
+            await emit(Decision("validation_summary", "elevate",
+                f"{confirmed}/{len(validations)} finding(s) reproduced in lab -> lab_confirmed."))
+
         stop = guard.exceeded()
         state = "stopped_limit" if stop else "completed"
         await emit(Decision("finalize", "report",
-            f"{len(findings)} suspected finding(s) derived from evidence."))
-        return self._result(state, stop or "objective complete", recon, findings, runtime, guard)
+            f"{len(findings)} suspected finding(s); "
+            f"{sum(1 for v in validations if v.reproduced)} elevated to lab_confirmed."))
+        return self._result(state, stop or "objective complete", recon, findings,
+                            runtime, guard, validations)
 
-    def _result(self, state, reason, recon, findings, runtime, guard) -> OrchestratorResult:
+    def _result(self, state, reason, recon, findings, runtime, guard,
+                validations=None) -> OrchestratorResult:
         return OrchestratorResult(
             state=state, stop_reason=reason, recon=recon, findings=findings,
             decisions=self.decisions, audit=list(self.audit_sink.entries),
             tool_calls_used=runtime.tool_calls_used, cost_usd=guard.cost_usd,
+            validations=validations or [],
         )
