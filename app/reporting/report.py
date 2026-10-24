@@ -96,11 +96,24 @@ def build_report(
             }
             for v in result.validations
         ],
+        "reasoning": _reasoning_block(result),
         "decisions": [
             {"step": d.step, "action": d.action, "rationale": d.rationale, "at": d.at}
             for d in result.decisions
         ],
         "audit_summary": dict(audit_summary),
+    }
+
+
+def _reasoning_block(result) -> dict | None:
+    r = result.reasoning
+    if r is None:
+        return None
+    return {
+        "owasp_summary": r.owasp_summary,
+        "prioritized": r.prioritized,
+        "risk_graph": {"nodes": r.risk_graph.nodes, "edges": r.risk_graph.edges},
+        "proposed_investigations": r.proposed_investigations,
     }
 
 

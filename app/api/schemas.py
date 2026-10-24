@@ -36,6 +36,8 @@ class RunIn(BaseModel):
     run_nuclei: bool = False
     validate_in_lab: bool = False  # Phase 2: reproduce findings in the isolated lab
     lab_container: str | None = None  # optional lab container to reset between tests
+    auth_check: bool = False  # Phase 3: analyze session/auth posture (passive)
+    reasoning: bool = False  # Phase 3: correlate findings, risk graph, prioritize
 
 
 class RunOut(BaseModel):
