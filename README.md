@@ -67,6 +67,37 @@ Trigger Phase 2 on a run with `"validate_in_lab": true` (optionally
 Trigger on a run with `"auth_check": true` and `"reasoning": true`. The report gains a
 `reasoning` block (risk graph, prioritized list, OWASP summary, proposed investigations).
 
+## Phase 4 — Web Dashboard (Next.js + TypeScript)
+
+A read-and-drive dashboard in `dashboard/` (Next.js 14 App Router, TypeScript) over the
+FastAPI backend:
+
+- **Overview** — platform stat cards (projects, assets, vulnerabilities, lab-confirmed,
+  running/total runs) from `GET /overview`.
+- **Projects** — create a project with its authorized scope, then start a run (LLM agents,
+  lab validation, auth check, reasoning as toggles) and watch the orchestrator's decision
+  log **live over the run WebSocket**.
+- **Vulnerabilities** — findings per project with severity, validation status, confidence,
+  and remediation.
+- **Agents** — the specialized agents and the phase each is implemented in (`GET /agents`).
+- **Security Lab** — the authorized isolated-lab scopes, with a reminder that validation is
+  lab-only.
+- **Reports** — fetch a run's report by id: stat cards, findings, the reasoning/risk-graph
+  block, and the raw canonical JSON.
+
+The backend gains the read endpoints the dashboard needs (`GET /projects` list,
+`GET /overview`, `GET /agents`, `GET /projects/{id}/runs`, `GET /projects/{id}/assets`) and
+a CORS allowance for `localhost:3000`. The dashboard adds **no** execution capability — it
+is a client of the same scope-gated, audited API, so every guardrail still applies.
+
+```bash
+# backend on :8000 (see Quick start), then:
+cd dashboard
+cp .env.local.example .env.local      # NEXT_PUBLIC_API_BASE=http://localhost:8000
+npm install
+npm run dev                            # http://localhost:3000
+```
+
 ## Requirements
 - Docker (the execution engine launches sandboxed tool containers)
 - Python 3.12+
@@ -132,9 +163,9 @@ DNS-rebinding (name in scope, IP out of scope → deny), cloud-metadata hard-den
 | Audit | Append-only record of agent, tool, params (redacted), target, scope decision, result. |
 
 ## Limitations (Phase 1)
-- Agents 4–8, the exploit-validation lab, auth/reasoning/knowledge base, the Next.js
-  dashboard, and production hardening (RBAC, secrets, rate limiting, cost controls) are
-  later phases. Their tables/contracts exist but are not wired.
+- This section documents the Phase 1 baseline. The Phase 2–4 work above (exploit-validation
+  lab, auth/reasoning/knowledge base, and the dashboard) is implemented on the stacked
+  branches; production hardening (RBAC, secrets, rate limiting, cost controls) is Phase 5.
 - The execution engine runs in the API process and uses the host Docker socket. In
   production (Phase 5) it should be split into a separate privileged service so the API
   itself holds no Docker access.
@@ -142,5 +173,6 @@ DNS-rebinding (name in scope, IP out of scope → deny), cloud-metadata hard-den
   `--cap-drop ALL`; UDP/SYN scans are out of scope for Phase 1.
 - `nuclei_scan` is registered but defaults to requiring approval and downloads templates
   on first use; the default e2e runs recon + passive probing only.
-- Reports are JSON (canonical) + a minimal HTML view; rich HTML/PDF arrive in Phase 4.
+- Reports are JSON (canonical) + a minimal server HTML view; the Phase 4 dashboard adds a
+  richer in-browser report view. PDF export remains a later nicety.
 - Findings are `suspected` only; nothing is auto-promoted to confirmed.

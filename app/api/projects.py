@@ -14,6 +14,19 @@ from app.db.base import get_session
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
+@router.get("", response_model=list[ProjectOut])
+async def list_projects(session: AsyncSession = Depends(get_session)):
+    rows = (await session.execute(
+        select(models.Project).order_by(models.Project.created_at.desc())
+    )).scalars().all()
+    out = []
+    for p in rows:
+        full = await _project_out(session, p.id)
+        if full:
+            out.append(full)
+    return out
+
+
 @router.post("", response_model=ProjectOut)
 async def create_project(body: ProjectIn, session: AsyncSession = Depends(get_session)):
     proj = await repo.create_project(
